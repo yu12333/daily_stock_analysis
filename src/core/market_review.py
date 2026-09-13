@@ -252,9 +252,9 @@ def run_customized_review(
         # 生成报告
         language = getattr(runtime_config, 'report_language', 'zh')
         if language == 'en':
-            report = f"# Sub-sector Analysis Report\n\n## {persist_region.upper()} Market\n\n### Sub-sector Highlights\n\n{sw3_sector_block}"
+            report = f"# Concept Theme Analysis Report\n\n## {persist_region.upper()} Market\n\n### Concept Theme Highlights\n\n{sw3_sector_block}"
         else:
-            report = f"# 细分行业分析报告\n\n## {persist_region.upper()}市场\n\n### 细分行业主线\n\n{sw3_sector_block}"
+            report = f"# 概念板块分析报告\n\n## {persist_region.upper()}市场\n\n### 概念板块主线\n\n{sw3_sector_block}"
         
         # 保存报告文件
         if True:  # save_report_file
@@ -274,9 +274,9 @@ def run_customized_review(
             try:
                 # 构建带标题的报告内容
                 if language == 'en':
-                    push_report = "# 📊 Sub-sector Analysis Report\n\n" + report
+                    push_report = "# 📊 Concept Theme Analysis Report\n\n" + report
                 else:
-                    push_report = "# 📊 细分行业分析报告\n\n" + report
+                    push_report = "# 📊 概念板块分析报告\n\n" + report
                 
                 # 发送通知（使用正确的 send 方法）
                 success = notifier.send(push_report, email_send_to_all=True, route_type="report")
