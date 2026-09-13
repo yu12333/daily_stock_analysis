@@ -1702,15 +1702,18 @@ def main() -> int:
             from src.core.market_review_runtime import build_market_review_runtime
 
             effective_region = None
-            if not getattr(args, 'force_run', False) and getattr(config, 'trading_day_check_enabled', True):
+            # 细分行业报告在非交易日也执行（使用最新可用数据）
+            # 只检查 region 配置，不跳过执行
+            if getattr(config, 'trading_day_check_enabled', True):
                 from src.core.trading_calendar import get_open_markets_today, compute_effective_region as _compute_region
                 open_markets = get_open_markets_today()
                 effective_region = _compute_region(
                     getattr(config, 'market_review_region', 'cn') or 'cn', open_markets
                 )
                 if effective_region == '':
-                    logger.info("今日为非交易日，跳过执行。可使用 --force-run 强制执行。")
-                    return 0
+                    # 非交易日不跳过，使用默认 region
+                    effective_region = getattr(config, 'market_review_region', 'cn') or 'cn'
+                    logger.info(f"今日为非交易日，使用最新可用数据生成细分行业报告 (region={effective_region})")
 
             logger.info("模式: 仅自定义分析（申万三级行业涨跌榜）")
             notifier, analyzer, search_service = build_market_review_runtime(config)
