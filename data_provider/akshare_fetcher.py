@@ -2254,18 +2254,14 @@ class AkshareFetcher(BaseFetcher):
         logger.info("[缓存未命中] 触发申万三级行业数据获取")
         
         def _get_rank_top_n(df: pd.DataFrame, change_col: str, name_col: str, n: int) -> Tuple[list, list]:
-            """从DataFrame中提取涨跌榜"""
+            """从DataFrame中提取涨跌榜（与 get_sector_rankings 保持一致）"""
             df[change_col] = pd.to_numeric(df[change_col], errors='coerce')
             df = df.dropna(subset=[change_col])
             
             # 涨幅前n
             top = df.nlargest(n, change_col)
             top_sectors = [
-                {
-                    'name': str(row[name_col]).strip(),
-                    'change_pct': round(float(row[change_col]), 2),
-                    'source': 'sw_industry_detail'
-                }
+                {'name': str(row[name_col]).strip(), 'change_pct': float(row[change_col])}
                 for _, row in top.iterrows()
                 if str(row[name_col]).strip()
             ]
@@ -2273,11 +2269,7 @@ class AkshareFetcher(BaseFetcher):
             # 跌幅前n
             bottom = df.nsmallest(n, change_col)
             bottom_sectors = [
-                {
-                    'name': str(row[name_col]).strip(),
-                    'change_pct': round(float(row[change_col]), 2),
-                    'source': 'sw_industry_detail'
-                }
+                {'name': str(row[name_col]).strip(), 'change_pct': float(row[change_col])}
                 for _, row in bottom.iterrows()
                 if str(row[name_col]).strip()
             ]
