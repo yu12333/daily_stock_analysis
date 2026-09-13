@@ -270,19 +270,24 @@ def run_customized_review(
             logger.info(f"[CustomizedReview] 报告已保存: {report_path}")
         
         # 发送通知
-        if send_notification and notifier:
+        if send_notification and notifier and notifier.is_available():
             try:
-                # 获取通知标题
+                # 构建带标题的报告内容
                 if language == 'en':
-                    title = "📊 Sub-sector Analysis Report"
+                    push_report = "# 📊 Sub-sector Analysis Report\n\n" + report
                 else:
-                    title = "📊 细分行业分析报告"
+                    push_report = "# 📊 细分行业分析报告\n\n" + report
                 
-                # 发送通知
-                notifier.send_markdown(report, title=title)
-                logger.info("[CustomizedReview] 通知已发送")
+                # 发送通知（使用正确的 send 方法）
+                success = notifier.send(push_report, email_send_to_all=True, route_type="report")
+                if success:
+                    logger.info("[CustomizedReview] 通知已发送")
+                else:
+                    logger.warning("[CustomizedReview] 通知发送失败")
             except Exception as e:
-                logger.warning(f"[CustomizedReview] 发送通知失败: {e}")
+                logger.warning(f"[CustomizedReview] 发送通知异常: {e}")
+        elif send_notification and not notifier.is_available():
+            logger.warning("[CustomizedReview] 通知渠道未配置，跳过发送")
         
         logger.info("[CustomizedReview] component=customized_review action=complete query_id=%s", history_query_id)
         return report
