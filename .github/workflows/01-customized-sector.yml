@@ -36,7 +36,7 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     environment: STOCK_LIST
-    timeout-minutes: 10
+    timeout-minutes: 5
     
     steps:
       - name: 随机延迟（避免固定时间访问）

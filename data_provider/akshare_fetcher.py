@@ -106,6 +106,14 @@ _hk_realtime_cache: Dict[str, Any] = {
 }
 _hk_realtime_cache_lock = threading.Lock()
 
+# 申万三级行业缓存
+_sw3_sector_cache: Dict[str, Any] = {
+    'data': None,
+    'timestamp': 0,
+    'ttl': 1500  # 25分钟缓存有效期（略短于30分钟的推送间隔）
+}
+_sw3_sector_cache_lock = threading.Lock()
+
 
 def _is_etf_code(stock_code: str) -> bool:
     """
@@ -2217,11 +2225,12 @@ class AkshareFetcher(BaseFetcher):
 
     def get_sw_third_sector_rankings(self, n: int = 10) -> Optional[Tuple[List[Dict], List[Dict]]]:
         """
-        获取申万三级行业涨跌榜（或细分行业板块）
+        获取申万三级行业涨跌榜（或细分行业板块）- 带缓存优化
         
         实现策略：
-        1. 优先使用东财的细分行业板块数据（包含更细粒度的行业分类）
-        2. 备选方案：使用申万二级行业数据（颗粒度介于一级和三级之间）
+        1. 检查缓存，如果有效直接返回
+        2. 优先使用东财的细分行业板块数据
+        3. 失败时返回缓存数据（即使过期）
         
         Args:
             n: 返回前n名和后n名
@@ -2230,6 +2239,19 @@ class AkshareFetcher(BaseFetcher):
             (top_sectors, bottom_sectors) 或 None
         """
         import akshare as ak
+        import time
+        
+        # 检查缓存
+        current_time = time.time()
+        with _sw3_sector_cache_lock:
+            if (_sw3_sector_cache['data'] is not None and 
+                current_time - _sw3_sector_cache['timestamp'] < _sw3_sector_cache['ttl']):
+                cache_age = int(current_time - _sw3_sector_cache['timestamp'])
+                logger.debug(f"[缓存命中] 申万三级行业 - 缓存年龄 {cache_age}s/{_sw3_sector_cache['ttl']}s")
+                top, bottom = _sw3_sector_cache['data']
+                return [dict(row) for row in top[:n]], [dict(row) for row in bottom[:n]]
+        
+        logger.info("[缓存未命中] 触发申万三级行业数据获取")
         
         def _get_rank_top_n(df: pd.DataFrame, change_col: str, name_col: str, n: int) -> Tuple[list, list]:
             """从DataFrame中提取涨跌榜"""
@@ -2274,6 +2296,12 @@ class AkshareFetcher(BaseFetcher):
                 name_col = '板块名称'
                 result = _get_rank_top_n(df, change_col, name_col, n)
                 logger.info(f"[Akshare] 获取细分行业板块成功: top={len(result[0])}, bottom={len(result[1])}")
+                
+                # 更新缓存
+                with _sw3_sector_cache_lock:
+                    _sw3_sector_cache['data'] = result
+                    _sw3_sector_cache['timestamp'] = current_time
+                
                 return result
         except Exception as e:
             logger.warning(f"[Akshare] 东财细分行业板块获取失败: {e}")
@@ -2316,7 +2344,14 @@ class AkshareFetcher(BaseFetcher):
         except Exception as e:
             logger.warning(f"[Akshare] 新浪细分行业获取失败: {e}")
         
-        logger.error("[Akshare] 所有细分行业数据源均获取失败")
+        # 所有数据源都失败，尝试返回旧缓存
+        with _sw3_sector_cache_lock:
+            if _sw3_sector_cache['data'] is not None:
+                logger.warning("[Akshare] 使用过期缓存数据")
+                top, bottom = _sw3_sector_cache['data']
+                return [dict(row) for row in top[:n]], [dict(row) for row in bottom[:n]]
+        
+        logger.error("[Akshare] 所有细分行业数据源均获取失败，且无缓存")
         return None
 
     def get_concept_rankings(self, n: int = 5) -> Optional[Tuple[List[Dict], List[Dict]]]:

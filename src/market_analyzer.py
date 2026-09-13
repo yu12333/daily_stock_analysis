@@ -574,7 +574,6 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         if self.profile.has_sector_rankings:
             self._get_sector_rankings(overview)
             self._get_concept_rankings(overview)
-            self._get_sw3_sector_rankings(overview)  # 新增：申万三级行业
         
         # 4. 获取北向资金（可选）
         # self._get_north_flow(overview)

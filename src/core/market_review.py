@@ -234,9 +234,13 @@ def run_customized_review(
             config=runtime_config,
         )
         
-        # 获取市场概览数据
+        # 快速获取申万三级行业数据（跳过其他不需要的数据）
         from src.market_analyzer import MarketOverview
-        overview = market_analyzer._get_market_overview()
+        from datetime import datetime
+        overview = MarketOverview(date=datetime.now().strftime('%Y-%m-%d'))
+        
+        # 只获取申万三级行业数据（快速模式）
+        market_analyzer._get_sw3_sector_rankings(overview)
         
         # 只生成申万三级行业板块
         sw3_sector_block = market_analyzer._build_sw3_sector_block(overview)
