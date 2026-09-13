@@ -107,6 +107,10 @@ class MarketOverview:
     bottom_sectors: List[Dict] = field(default_factory=list)  # 跌幅前5板块
     top_concepts: List[Dict] = field(default_factory=list)    # 涨幅前5概念
     bottom_concepts: List[Dict] = field(default_factory=list) # 跌幅前5概念
+    
+    # 申万三级行业（细分行业）涨跌榜
+    top_sw3_sectors: List[Dict] = field(default_factory=list)     # 涨幅前10细分行业
+    bottom_sw3_sectors: List[Dict] = field(default_factory=list)  # 跌幅前10细分行业
 
 
 @dataclass
@@ -570,6 +574,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         if self.profile.has_sector_rankings:
             self._get_sector_rankings(overview)
             self._get_concept_rankings(overview)
+            self._get_sw3_sector_rankings(overview)  # 新增：申万三级行业
         
         # 4. 获取北向资金（可选）
         # self._get_north_flow(overview)
@@ -697,6 +702,31 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         except Exception as e:
             logger.warning("[大盘] %s action=get_concept_rankings status=failed error=%s", self._log_context(), e)
     
+
+
+    def _get_sw3_sector_rankings(self, overview: MarketOverview):
+        """获取申万三级行业（细分行业）涨跌榜"""
+        try:
+            logger.info("[大盘] %s action=get_sw3_sector_rankings status=start", self._log_context())
+
+            top_sectors, bottom_sectors = self.data_manager.get_sw_third_sector_rankings(10)
+
+            if top_sectors or bottom_sectors:
+                overview.top_sw3_sectors = top_sectors
+                overview.bottom_sw3_sectors = bottom_sectors
+
+                logger.info(
+                    "[大盘] %s action=get_sw3_sector_rankings status=success top=%s bottom=%s",
+                    self._log_context(),
+                    [s.get('name') for s in overview.top_sw3_sectors[:3]],
+                    [s.get('name') for s in overview.bottom_sw3_sectors[:3]],
+                )
+            else:
+                logger.warning("[大盘] %s action=get_sw3_sector_rankings status=empty", self._log_context())
+
+        except Exception as e:
+            logger.warning("[大盘] %s action=get_sw3_sector_rankings status=failed error=%s", self._log_context(), e)
+
     # def _get_north_flow(self, overview: MarketOverview):
     #     """获取北向资金流入"""
     #     try:
@@ -1408,6 +1438,120 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             append_ranking("#### 行业板块领跌 Top 5", "行业板块", overview.bottom_sectors)
             append_ranking("#### 概念板块领涨 Top 5", "概念板块", overview.top_concepts)
             append_ranking("#### 概念板块领跌 Top 5", "概念板块", overview.bottom_concepts)
+        return "\n".join(lines)
+
+
+
+    def _build_sw3_sector_block(self, overview: MarketOverview) -> str:
+        """Build SW3 (细分行業) ranking blocks with category summary."""
+        if not overview.top_sw3_sectors and not overview.bottom_sw3_sectors:
+            return ""
+        
+        lines = []
+        language = self._get_review_language()
+        
+        # 行业分类映射（用于智能总结）
+        CATEGORY_MAP = {
+            '科技': ['半导体', '芯片', '软件', '计算机', '互联网', '电子', '通信', '人工智能', 'AI', '云计算', '大数据', '物联网', '5G', '光通信', 'PCB', '消费电子', '显示面板', 'LED'],
+            '医药': ['医药', '生物', '疫苗', '创新药', '医疗器械', '中药', '药店', '医疗', '基因', '诊断'],
+            '消费': ['白酒', '食品', '饮料', '家电', '服装', '纺织', '零售', '电商', '旅游', '酒店', '餐饮', '免税'],
+            '金融': ['银行', '证券', '保险', '信托', '金融科技'],
+            '新能源': ['光伏', '风电', '储能', '锂电', '新能源', '电池', '氢能', '碳中和'],
+            '制造': ['机械', '军工', '航空航天', '汽车', '零部件', '机器人', '自动化'],
+            '地产': ['房地产', '物业', '建筑', '建材', '装修'],
+            '周期': ['钢铁', '煤炭', '有色', '化工', '石油', '天然气', '稀土'],
+            '农业': ['农业', '养殖', '种植', '饲料', '种子', '林业'],
+            '传媒': ['传媒', '游戏', '影视', '广告', '出版', '版权'],
+        }
+        
+        def categorize_sector(name: str) -> str:
+            """将行业名称归类到大类"""
+            for category, keywords in CATEGORY_MAP.items():
+                for keyword in keywords:
+                    if keyword in name:
+                        return category
+            return '其他'
+        
+        def generate_summary(top_sectors: list, bottom_sectors: list) -> str:
+            """生成板块主线总结"""
+            # 统计领涨板块的大类分布
+            top_categories = {}
+            for sector in top_sectors[:10]:
+                cat = categorize_sector(sector.get('name', ''))
+                top_categories[cat] = top_categories.get(cat, 0) + 1
+            
+            # 统计领跌板块的大类分布
+            bottom_categories = {}
+            for sector in bottom_sectors[:10]:
+                cat = categorize_sector(sector.get('name', ''))
+                bottom_categories[cat] = bottom_categories.get(cat, 0) + 1
+            
+            summary_parts = []
+            
+            # 总结领涨主线
+            if top_categories:
+                sorted_top = sorted(top_categories.items(), key=lambda x: x[1], reverse=True)
+                top_main = [cat for cat, count in sorted_top[:3] if count >= 2]
+                if not top_main and sorted_top:
+                    top_main = [sorted_top[0][0]]
+                if top_main:
+                    summary_parts.append(f"**领涨主线**：{'、'.join(top_main)}板块表现强势")
+            
+            # 总结领跌主线
+            if bottom_categories:
+                sorted_bottom = sorted(bottom_categories.items(), key=lambda x: x[1], reverse=True)
+                bottom_main = [cat for cat, count in sorted_bottom[:3] if count >= 2]
+                if not bottom_main and sorted_bottom:
+                    bottom_main = [sorted_bottom[0][0]]
+                if bottom_main:
+                    summary_parts.append(f"**领跌主线**：{'、'.join(bottom_main)}板块走弱")
+            
+            # 市场风格判断
+            if top_categories and bottom_categories:
+                tech_in_top = top_categories.get('科技', 0)
+                tech_in_bottom = bottom_categories.get('科技', 0)
+                cyclical_in_top = sum(top_categories.get(cat, 0) for cat in ['周期', '制造'])
+                cyclical_in_bottom = sum(bottom_categories.get(cat, 0) for cat in ['周期', '制造'])
+                
+                if tech_in_top >= 3 and cyclical_in_bottom >= 2:
+                    summary_parts.append("**市场风格**：成长风格占优，科技股领涨，周期股承压")
+                elif cyclical_in_top >= 3 and tech_in_bottom >= 2:
+                    summary_parts.append("**市场风格**：价值风格占优，周期股领涨，科技股回调")
+            
+            return '；'.join(summary_parts) if summary_parts else ""
+        
+        # 生成总结
+        summary = generate_summary(overview.top_sw3_sectors, overview.bottom_sw3_sectors)
+        
+        if summary:
+            lines.append("#### 📊 细分行业主线总结")
+            lines.append(summary)
+            lines.append("")
+        
+        def append_ranking(title: str, rows: List[Dict], limit: int = 10) -> None:
+            if not rows:
+                return
+            if lines:
+                lines.append("")
+            lines.extend([
+                title,
+                f"| {'Rank' if language == 'en' else '排名'} | {'Sector' if language == 'en' else '细分行业'} | {'Change' if language == 'en' else '涨跌幅'} | {'Category' if language == 'en' else '大类'} |",
+                "|------|------|--------|------|",
+            ])
+            for rank, item in enumerate(rows[:limit], 1):
+                name = item.get('name', '-')
+                category = categorize_sector(name)
+                lines.append(
+                    f"| {rank} | {name} | {self._format_signed_pct(item.get('change_pct'))} | {category} |"
+                )
+        
+        if language == "en":
+            append_ranking("#### Leading Sub-sectors Top 10", overview.top_sw3_sectors, 10)
+            append_ranking("#### Lagging Sub-sectors Top 10", overview.bottom_sw3_sectors, 10)
+        else:
+            append_ranking("#### 细分行业领涨 Top 10", overview.top_sw3_sectors, 10)
+            append_ranking("#### 细分行业领跌 Top 10", overview.bottom_sw3_sectors, 10)
+        
         return "\n".join(lines)
 
     def _build_news_block(self, news: List) -> str:

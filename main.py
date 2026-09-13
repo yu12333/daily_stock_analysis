@@ -370,6 +370,12 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        '--customized-only',
+        action='store_true',
+        help='仅运行自定义分析（申万三级行业涨跌榜）'
+    )
+
+    parser.add_argument(
         '--force-run',
         action='store_true',
         help='跳过交易日检查，强制执行全量分析（Issue #373）'
@@ -1055,6 +1061,31 @@ def run_full_analysis(
                 market_report = _market_review_report_text(review_result)
             elif can_reuse_market_context:
                 market_report = market_context_full_report or market_context_summary
+            
+            # 新增：细分行业报告（独立于大盘复盘）
+            if not getattr(args, 'no_notify', False):
+                try:
+                    from src.core.market_review import run_customized_review
+                    import os
+                    os.environ['DSA_CUSTOMIZED_ONLY'] = '1'
+                    
+                    logger.info("正在生成细分行业报告...")
+                    customized_result = run_customized_review(
+                        notifier=pipeline.notifier,
+                        analyzer=pipeline.analyzer,
+                        search_service=pipeline.search_service,
+                        config=config,
+                        send_notification=True,
+                        override_region=market_review_region,
+                        query_id=query_id,
+                        trigger_source="full_analysis",
+                    )
+                    if customized_result:
+                        logger.info("细分行业报告生成成功")
+                    else:
+                        logger.warning("细分行业报告生成失败或无数据")
+                except Exception as e:
+                    logger.warning(f"细分行业报告生成异常: {e}")
 
         expected_stock_report = (
             not getattr(args, "dry_run", False)
@@ -1664,6 +1695,40 @@ def main() -> int:
                 trigger_source="cli",
             )
             return 0 if market_review_result else 1
+
+        # 模式1.5: 仅自定义分析（申万三级行业涨跌榜）
+        if args.customized_only:
+            from src.core.market_review import run_customized_review
+            from src.core.market_review_runtime import build_market_review_runtime
+
+            effective_region = None
+            if not getattr(args, 'force_run', False) and getattr(config, 'trading_day_check_enabled', True):
+                from src.core.trading_calendar import get_open_markets_today, compute_effective_region as _compute_region
+                open_markets = get_open_markets_today()
+                effective_region = _compute_region(
+                    getattr(config, 'market_review_region', 'cn') or 'cn', open_markets
+                )
+                if effective_region == '':
+                    logger.info("今日为非交易日，跳过执行。可使用 --force-run 强制执行。")
+                    return 0
+
+            logger.info("模式: 仅自定义分析（申万三级行业涨跌榜）")
+            notifier, analyzer, search_service = build_market_review_runtime(config)
+
+            # 设置环境变量，标记为 customized-only 模式
+            import os
+            os.environ['DSA_CUSTOMIZED_ONLY'] = '1'
+
+            customized_result = run_customized_review(
+                notifier=notifier,
+                analyzer=analyzer,
+                search_service=search_service,
+                config=config,
+                send_notification=not args.no_notify,
+                override_region=effective_region,
+                trigger_source="cli",
+            )
+            return 0 if customized_result else 1
 
         # 模式2: 定时任务模式
         if args.schedule or config.schedule_enabled:

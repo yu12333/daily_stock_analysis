@@ -2214,6 +2214,111 @@ class AkshareFetcher(BaseFetcher):
             logger.error(f"[Akshare] 新浪接口获取板块排行也失败: {e}")
             return None
 
+
+    def get_sw_third_sector_rankings(self, n: int = 10) -> Optional[Tuple[List[Dict], List[Dict]]]:
+        """
+        获取申万三级行业涨跌榜（或细分行业板块）
+        
+        实现策略：
+        1. 优先使用东财的细分行业板块数据（包含更细粒度的行业分类）
+        2. 备选方案：使用申万二级行业数据（颗粒度介于一级和三级之间）
+        
+        Args:
+            n: 返回前n名和后n名
+            
+        Returns:
+            (top_sectors, bottom_sectors) 或 None
+        """
+        import akshare as ak
+        
+        def _get_rank_top_n(df: pd.DataFrame, change_col: str, name_col: str, n: int) -> Tuple[list, list]:
+            """从DataFrame中提取涨跌榜"""
+            df[change_col] = pd.to_numeric(df[change_col], errors='coerce')
+            df = df.dropna(subset=[change_col])
+            
+            # 涨幅前n
+            top = df.nlargest(n, change_col)
+            top_sectors = [
+                {
+                    'name': str(row[name_col]).strip(),
+                    'change_pct': round(float(row[change_col]), 2),
+                    'source': 'sw_industry_detail'
+                }
+                for _, row in top.iterrows()
+                if str(row[name_col]).strip()
+            ]
+            
+            # 跌幅前n
+            bottom = df.nsmallest(n, change_col)
+            bottom_sectors = [
+                {
+                    'name': str(row[name_col]).strip(),
+                    'change_pct': round(float(row[change_col]), 2),
+                    'source': 'sw_industry_detail'
+                }
+                for _, row in bottom.iterrows()
+                if str(row[name_col]).strip()
+            ]
+            return top_sectors, bottom_sectors
+        
+        # 方案1：尝试获取东财细分行业板块（更接近三级行业粒度）
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            
+            logger.info("[API调用] ak.stock_board_industry_name_em() 获取细分行业板块排行...")
+            df = ak.stock_board_industry_name_em()
+            if df is not None and not df.empty:
+                # 东财行业板块已经比较细分，可以作为三级行业的替代
+                change_col = '涨跌幅'
+                name_col = '板块名称'
+                result = _get_rank_top_n(df, change_col, name_col, n)
+                logger.info(f"[Akshare] 获取细分行业板块成功: top={len(result[0])}, bottom={len(result[1])}")
+                return result
+        except Exception as e:
+            logger.warning(f"[Akshare] 东财细分行业板块获取失败: {e}")
+        
+        # 方案2：尝试获取申万二级行业实时数据
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            
+            logger.info("[API调用] index_realtime_sw(symbol='二级行业') 获取申万二级行业排行...")
+            df = ak.index_realtime_sw(symbol='二级行业')
+            if df is not None and not df.empty:
+                # 申万二级行业数据
+                change_col = '涨跌幅' if '涨跌幅' in df.columns else df.columns[3]  # 通常第4列是涨跌幅
+                name_col = '名称' if '名称' in df.columns else df.columns[1]  # 通常第2列是名称
+                result = _get_rank_top_n(df, change_col, name_col, n)
+                # 标记来源为申万二级
+                for item in result[0] + result[1]:
+                    item['source'] = 'sw_level2'
+                logger.info(f"[Akshare] 获取申万二级行业成功: top={len(result[0])}, bottom={len(result[1])}")
+                return result
+        except Exception as e:
+            logger.warning(f"[Akshare] 申万二级行业获取失败: {e}")
+        
+        # 方案3：使用新浪细分行业接口
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            
+            logger.info("[API调用] ak.stock_sector_spot(indicator='行业') 获取新浪细分行业...")
+            df = ak.stock_sector_spot(indicator='行业')
+            if df is not None and not df.empty:
+                change_col = '涨跌幅'
+                name_col = '板块'
+                result = _get_rank_top_n(df, change_col, name_col, n)
+                for item in result[0] + result[1]:
+                    item['source'] = 'sina_industry'
+                logger.info(f"[Akshare] 获取新浪细分行业成功: top={len(result[0])}, bottom={len(result[1])}")
+                return result
+        except Exception as e:
+            logger.warning(f"[Akshare] 新浪细分行业获取失败: {e}")
+        
+        logger.error("[Akshare] 所有细分行业数据源均获取失败")
+        return None
+
     def get_concept_rankings(self, n: int = 5) -> Optional[Tuple[List[Dict], List[Dict]]]:
         """获取概念/题材涨跌榜。"""
         import akshare as ak

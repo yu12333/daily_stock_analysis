@@ -426,6 +426,19 @@ class BaseFetcher(ABC):
         """
         return None
 
+    def get_sw_third_sector_rankings(self, n: int = 10) -> Optional[Tuple[List[Dict], List[Dict]]]:
+        """
+        获取申万三级行业（或细分行业）涨跌榜
+        
+        Args:
+            n: 返回前n个
+            
+        Returns:
+            Tuple: (领涨板块列表, 领跌板块列表) 或 None
+        """
+        return None
+
+
     def get_hot_stocks(self, n: int = 10) -> Optional[List[Dict[str, Any]]]:
         """
         获取市场人气股榜。
@@ -4764,6 +4777,43 @@ class DataFetcherManager:
                 cached_bottom,
             )
             return self._copy_ranking_rows(cached_top), self._copy_ranking_rows(cached_bottom)
+
+
+
+    def get_sw_third_sector_rankings(self, n: int = 10) -> Tuple[List[Dict], List[Dict]]:
+        """获取申万三级行业（或细分行业）涨跌榜（自动切换数据源）。"""
+        try:
+            normalized_n = int(n)
+        except (TypeError, ValueError):
+            normalized_n = 10
+        if normalized_n <= 0:
+            normalized_n = 10
+
+        last_error = ""
+        top: List[Dict] = []
+        bottom: List[Dict] = []
+        
+        for fetcher in self._get_fetchers_snapshot():
+            try:
+                # 检查 fetcher 是否有 get_sw_third_sector_rankings 方法
+                if not hasattr(fetcher, 'get_sw_third_sector_rankings'):
+                    continue
+                data = fetcher.get_sw_third_sector_rankings(normalized_n)
+                if data and (data[0] or data[1]):
+                    top = data[0] or []
+                    bottom = data[1] or []
+                    logger.info(f"[{fetcher.name}] 获取申万三级行业排行成功")
+                    break
+                last_error = f"{fetcher.name}返回空结果"
+            except Exception as e:
+                error_type, error_reason = summarize_exception(e)
+                last_error = f"{fetcher.name} ({error_type}) {error_reason}"
+                logger.warning(f"[{fetcher.name}] 获取申万三级行业排行失败: {error_reason}")
+
+        if not top and not bottom and last_error:
+            logger.warning(f"[申万三级行业排行] 所有数据源均失败，最终错误: {last_error}")
+
+        return top, bottom
 
     def get_hot_stocks(self, n: int = 10) -> List[Dict[str, Any]]:
         """获取市场人气股榜（自动切换数据源）。"""

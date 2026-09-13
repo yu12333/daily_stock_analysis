@@ -1,0 +1,131 @@
+name: 细分行业分析（每30分钟）
+
+on:
+  # 定时触发 - A股交易期间（周一到周五）
+  # 北京时间 9:25-15:00，每30分钟一次
+  # UTC 时间 1:25-7:00
+  schedule:
+    # 上午盘：9:25, 9:55, 10:25, 10:55, 11:25 (UTC 1:25, 1:55, 2:25, 2:55, 3:25)
+    - cron: '25 1 * * 1-5'
+    - cron: '55 1 * * 1-5'
+    - cron: '25 2 * * 1-5'
+    - cron: '55 2 * * 1-5'
+    - cron: '25 3 * * 1-5'
+    # 下午盘：13:05, 13:35, 14:05, 14:35, 14:55 (UTC 5:05, 5:35, 6:05, 6:35, 6:55)
+    - cron: '5 5 * * 1-5'
+    - cron: '35 5 * * 1-5'
+    - cron: '5 6 * * 1-5'
+    - cron: '35 6 * * 1-5'
+    - cron: '55 6 * * 1-5'
+  
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: '强制运行（跳过交易日检查）'
+        required: false
+        default: false
+        type: boolean
+
+# 并发控制：同一时间只运行一个分析任务
+concurrency:
+  group: customized-sector-analysis
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    environment: STOCK_LIST
+    timeout-minutes: 10
+    
+    steps:
+      - name: 随机延迟（避免固定时间访问）
+        run: sleep $((RANDOM % 30))  # 随机延迟0-30秒启动
+      
+      - name: 检出代码
+        uses: actions/checkout@v5
+      
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 创建必要目录
+        run: |
+          mkdir -p data logs reports
+      
+      - name: 执行细分行业分析
+        env:
+          # AI 配置（最小配置）
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
+          AIHUBMIX_KEY: ${{ secrets.AIHUBMIX_KEY }}
+          
+          # 通知渠道配置
+          WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
+          GOTIFY_URL: ${{ secrets.GOTIFY_URL }}
+          GOTIFY_TOKEN: ${{ secrets.GOTIFY_TOKEN }}
+          
+          # 市场配置
+          MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || 'cn' }}
+          REPORT_LANGUAGE: ${{ vars.REPORT_LANGUAGE || 'zh' }}
+          
+        run: |
+          echo "=========================================="
+          echo "📊 细分行业分析（每30分钟）"
+          echo "=========================================="
+          echo "⏰ 时间: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          echo ""
+          
+          # 构建命令行参数
+          FORCE_RUN_ARG=""
+          if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+            FORCE_RUN_ARG="--force-run"
+            echo "⚡ 已启用强制运行模式"
+          fi
+          
+          # 执行细分行业分析
+          python main.py --customized-only $FORCE_RUN_ARG
+      
+      - name: 上传分析报告
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: customized-sector-reports-${{ github.run_number }}
+          path: |
+            reports/
+            logs/
+          retention-days: 7
+      
+      - name: 显示运行结果
+        if: always()
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "📊 分析完成"
+          echo "=========================================="
+          if [ -d "reports" ] && [ "$(ls -A reports 2>/dev/null)" ]; then
+            echo "生成的报告:"
+            ls -la reports/
+          else
+            echo "⚠️ 未生成报告文件"
+          fi

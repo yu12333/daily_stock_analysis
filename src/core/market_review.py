@@ -171,6 +171,122 @@ def _resolve_market_review_regions(raw_region: Optional[str]) -> list[str]:
     return normalized.split(",")
 
 
+
+
+def run_customized_review(
+    notifier: NotificationService,
+    analyzer: Optional[GeminiAnalyzer] = None,
+    search_service: Optional[SearchService] = None,
+    config: Optional[object] = None,
+    send_notification: bool = True,
+    override_region: Optional[str] = None,
+    query_id: Optional[str] = None,
+    trigger_source: str = "cli",
+) -> Optional[str]:
+    """
+    执行自定义分析（仅申万三级行业涨跌榜）
+
+    Args:
+        notifier: 通知服务
+        analyzer: AI分析器（可选）
+        search_service: 搜索服务（可选）
+        config: 配置（可选）
+        send_notification: 是否发送通知
+        override_region: 覆盖市场区域
+        query_id: 查询ID
+        trigger_source: 触发来源
+
+    Returns:
+        复盘报告文本
+    """
+    import os
+    
+    # 检查是否是 customized-only 模式
+    if os.environ.get('DSA_CUSTOMIZED_ONLY') != '1':
+        return None
+    
+    runtime_config = config or get_config()
+    history_query_id = query_id or f"customized_review_{uuid.uuid4().hex}"
+    raw_region = (
+        override_region
+        if override_region is not None
+        else (getattr(runtime_config, 'market_review_region', 'cn') or 'cn')
+    )
+    run_markets = _resolve_market_review_regions(raw_region)
+    persist_region = ','.join(run_markets) if len(run_markets) > 1 else run_markets[0]
+    
+    logger.info(
+        "[CustomizedReview] component=customized_review action=start trigger_source=%s query_id=%s region=%s",
+        trigger_source,
+        history_query_id,
+        persist_region,
+    )
+    
+    try:
+        # 只处理第一个市场（通常是 A 股）
+        run_region = run_markets[0] if run_markets else 'cn'
+        
+        # 创建 MarketAnalyzer 实例
+        market_analyzer = MarketAnalyzer(
+            search_service=search_service,
+            analyzer=analyzer,
+            region=run_region,
+            config=runtime_config,
+        )
+        
+        # 获取市场概览数据
+        from src.market_analyzer import MarketOverview
+        overview = market_analyzer._get_market_overview()
+        
+        # 只生成申万三级行业板块
+        sw3_sector_block = market_analyzer._build_sw3_sector_block(overview)
+        
+        if not sw3_sector_block:
+            logger.warning("[CustomizedReview] 未获取到申万三级行业数据")
+            return None
+        
+        # 生成报告
+        language = getattr(runtime_config, 'report_language', 'zh')
+        if language == 'en':
+            report = f"# Sub-sector Analysis Report\n\n## {persist_region.upper()} Market\n\n### Sub-sector Highlights\n\n{sw3_sector_block}"
+        else:
+            report = f"# 细分行业分析报告\n\n## {persist_region.upper()}市场\n\n### 细分行业主线\n\n{sw3_sector_block}"
+        
+        # 保存报告文件
+        if True:  # save_report_file
+            from datetime import datetime
+            date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_filename = f"customized_review_{date_str}.md"
+            reports_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'reports')
+            os.makedirs(reports_dir, exist_ok=True)
+            report_path = os.path.join(reports_dir, report_filename)
+            
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report)
+            logger.info(f"[CustomizedReview] 报告已保存: {report_path}")
+        
+        # 发送通知
+        if send_notification and notifier:
+            try:
+                # 获取通知标题
+                if language == 'en':
+                    title = "📊 Sub-sector Analysis Report"
+                else:
+                    title = "📊 细分行业分析报告"
+                
+                # 发送通知
+                notifier.send_markdown(report, title=title)
+                logger.info("[CustomizedReview] 通知已发送")
+            except Exception as e:
+                logger.warning(f"[CustomizedReview] 发送通知失败: {e}")
+        
+        logger.info("[CustomizedReview] component=customized_review action=complete query_id=%s", history_query_id)
+        return report
+        
+    except Exception as e:
+        logger.error("[CustomizedReview] component=customized_review action=failed error=%s", str(e))
+        return None
+
 def run_market_review(
     notifier: NotificationService,
     analyzer: Optional[GeminiAnalyzer] = None,

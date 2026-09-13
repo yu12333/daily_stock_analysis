@@ -18,6 +18,7 @@ on:
           - full          # 完整分析（股票+大盘）
           - market-only   # 仅大盘复盘
           - stocks-only   # 仅股票分析
+          - customized-only  # 仅细分行业分析（申万三级）
       force_run:
         description: '强制运行（跳过交易日检查）'
         required: false
@@ -531,6 +532,8 @@ jobs:
             python main.py --market-review $FORCE_RUN_ARG
           elif [ "$MODE" = "stocks-only" ]; then
             python main.py --no-market-review $FORCE_RUN_ARG
+          elif [ "$MODE" = "customized-only" ]; then
+            python main.py --customized-only $FORCE_RUN_ARG
           else
             python main.py $FORCE_RUN_ARG
           fi
