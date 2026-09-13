@@ -1545,11 +1545,11 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 )
         
         if language == "en":
-            append_ranking("#### Leading Sub-sectors Top 10", overview.top_sw3_sectors, 10)
-            append_ranking("#### Lagging Sub-sectors Top 10", overview.bottom_sw3_sectors, 10)
+            append_ranking("#### Leading Concept Themes Top 10", overview.top_sw3_sectors, 10)
+            append_ranking("#### Lagging Concept Themes Top 10", overview.bottom_sw3_sectors, 10)
         else:
-            append_ranking("#### 细分行业领涨 Top 10", overview.top_sw3_sectors, 10)
-            append_ranking("#### 细分行业领跌 Top 10", overview.bottom_sw3_sectors, 10)
+            append_ranking("#### 概念板块领涨 Top 10", overview.top_sw3_sectors, 10)
+            append_ranking("#### 概念板块领跌 Top 10", overview.bottom_sw3_sectors, 10)
         
         return "\n".join(lines)
 

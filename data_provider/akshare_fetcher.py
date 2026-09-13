@@ -2225,11 +2225,11 @@ class AkshareFetcher(BaseFetcher):
 
     def get_sw_third_sector_rankings(self, n: int = 10) -> Optional[Tuple[List[Dict], List[Dict]]]:
         """
-        获取申万三级行业涨跌榜（或细分行业板块）- 带缓存优化
+        获取东财概念板块涨跌榜（热点题材）- 带缓存优化
         
         实现策略：
         1. 检查缓存，如果有效直接返回
-        2. 优先使用东财的细分行业板块数据
+        2. 获取东财概念板块数据
         3. 失败时返回缓存数据（即使过期）
         
         Args:
@@ -2247,11 +2247,11 @@ class AkshareFetcher(BaseFetcher):
             if (_sw3_sector_cache['data'] is not None and 
                 current_time - _sw3_sector_cache['timestamp'] < _sw3_sector_cache['ttl']):
                 cache_age = int(current_time - _sw3_sector_cache['timestamp'])
-                logger.debug(f"[缓存命中] 申万三级行业 - 缓存年龄 {cache_age}s/{_sw3_sector_cache['ttl']}s")
+                logger.debug(f"[缓存命中] 概念板块 - 缓存年龄 {cache_age}s/{_sw3_sector_cache['ttl']}s")
                 top, bottom = _sw3_sector_cache['data']
                 return [dict(row) for row in top[:n]], [dict(row) for row in bottom[:n]]
         
-        logger.info("[缓存未命中] 触发申万三级行业数据获取")
+        logger.info("[缓存未命中] 触发概念板块数据获取")
         
         def _get_rank_top_n(df: pd.DataFrame, change_col: str, name_col: str, n: int) -> Tuple[list, list]:
             """从DataFrame中提取涨跌榜（与 get_sector_rankings 保持一致）"""
@@ -2275,19 +2275,19 @@ class AkshareFetcher(BaseFetcher):
             ]
             return top_sectors, bottom_sectors
         
-        # 方案1：尝试获取东财细分行业板块（更接近三级行业粒度）
+        # 方案1：获取东财概念板块数据（热点题材）
         try:
             self._set_random_user_agent()
             self._enforce_rate_limit()
             
-            logger.info("[API调用] ak.stock_board_industry_name_em() 获取细分行业板块排行...")
-            df = ak.stock_board_industry_name_em()
+            logger.info("[API调用] ak.stock_board_concept_name_em() 获取概念板块排行...")
+            df = ak.stock_board_concept_name_em()
             if df is not None and not df.empty:
-                # 东财行业板块已经比较细分，可以作为三级行业的替代
+                # 东财概念板块
                 change_col = '涨跌幅'
                 name_col = '板块名称'
                 result = _get_rank_top_n(df, change_col, name_col, n)
-                logger.info(f"[Akshare] 获取细分行业板块成功: top={len(result[0])}, bottom={len(result[1])}")
+                logger.info(f"[Akshare] 获取概念板块成功: top={len(result[0])}, bottom={len(result[1])}")
                 
                 # 更新缓存
                 with _sw3_sector_cache_lock:
@@ -2296,7 +2296,7 @@ class AkshareFetcher(BaseFetcher):
                 
                 return result
         except Exception as e:
-            logger.warning(f"[Akshare] 东财细分行业板块获取失败: {e}")
+            logger.warning(f"[Akshare] 东财概念板块获取失败: {e}")
         
         # 方案2：尝试获取申万二级行业实时数据
         try:
